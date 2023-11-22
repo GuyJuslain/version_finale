@@ -1,0 +1,26 @@
+V "GNAT Lib v24.20221102"
+M P W=b
+A -gnatA
+A -gnat2022
+A -mtune=generic
+A -march=x86-64
+P ZX
+
+RN
+RV NO_IMPLEMENTATION_PRAGMAS
+
+U echo_client%b		echo_client.adb		95146fe5 NE OO SU
+W client%s		client.adb		client.ali
+
+D client.ads		20231122192025 1721ef63 client%s
+D echo_client.adb	20231122192037 82358086 echo_client%b
+D system.ads		20220909011632 426dafb8 system%s
+G a e
+G c Z b b [echo_client standard 3 11 none]
+G r c none [echo_client standard 3 11 none] [run client 2 15 none]
+X 1 client.ads
+1K9*Client 3e11 2|1w6 5r5
+2U15*Run 2|5s12
+X 2 echo_client.adb
+3U11*Echo_Client 3b11 6t4
+

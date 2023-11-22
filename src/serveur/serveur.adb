@@ -1,19 +1,9 @@
 with Ada.Text_IO; 
 with Ada.IO_Exceptions;
-with GNAT.Sockets;
+with GNAT.Sockets; use GNAT.Sockets;
 
-procedure serv is
--- Multiple socket connections example based on Rosetta Code echo server.
--- Exemple de connexions à sockets multiples basé sur le serveur d'écho Rosetta Code.
-
-   Tasks_To_Create : constant := 3; -- simultaneous socket connections.
-
--------------------------------------------------------------------------------
--- Use stack to pop the next free task index. When a task finishes its
--- asynchronous (no rendezvous) phase, it pushes the index back on the stack.
-
--- Utilisez la pile pour afficher le prochain index de tâches libres. 
--- Lorsqu'une tâche termine sa phase asynchrone (pas de rendez-vous), elle repousse l'index sur la pile.
+package body Serveur is
+   Tasks_To_Create : constant := 2; -- simultaneous socket connections.
 
    type Integer_List is array (1..Tasks_To_Create) of integer; --  Pile de tache
    subtype Counter is integer range 0 .. Tasks_To_Create;
@@ -51,47 +41,45 @@ procedure serv is
 
    Task_Info : Info;
      
--------------------------------------------------------------------------------
    task type SocketTask is
-      -- Rendezvous the setup, which sets the parameters for entry Echo.
-      -- Rendez-vous au setup, qui définit les paramètres d'entrée Echo.
       entry Setup (Connection : GNAT.Sockets.Socket_Type;
                    Client     : GNAT.Sockets.Sock_Addr_Type;
                    Channel    : GNAT.Sockets.Stream_Access;
                    Task_Index : Index);
-      -- Echo accepts the asynchronous phase, i.e. no rendezvous. When the
-      -- communication is over, push the task number back on the stack.
-
-      -- Echo accepte la phase asynchrone, c'est à dire pas de rendez-vous. 
-      -- Une fois la communication terminée, repoussez le numéro de tâche sur la pile.
+      entry Setup_Other_Channel (Channel : GNAT.Sockets.Stream_Access);
       entry Echo;
    end SocketTask;
 
-   task body SocketTask is    -- Definition du type tache Sockettask
+   task body SocketTask is
       my_Connection : GNAT.Sockets.Socket_Type;
       my_Client     : GNAT.Sockets.Sock_Addr_Type;
       my_Channel    : GNAT.Sockets.Stream_Access;
+      other_Channel : GNAT.Sockets.Stream_Access := null;
       my_Index      : Index;
+      
    begin
-      loop -- Infinitely reusable // Réutilisable à l'infini
+      loop
          accept Setup (Connection : GNAT.Sockets.Socket_Type; 
                        Client  : GNAT.Sockets.Sock_Addr_Type; 
                        Channel : GNAT.Sockets.Stream_Access;
                        Task_Index   : Index) do
-            -- Store parameters and mark task busy. 
-            -- Stockez les paramètres et marquez la tâche comme occupée.
             my_Connection := Connection;
             my_Client     := Client;
             my_Channel    := Channel;
             my_Index      := Task_Index;
          end;
+
+         accept Setup_Other_Channel (Channel : GNAT.Sockets.Stream_Access) do
+            other_Channel := Channel;
+         end;
    
-         accept Echo; -- Do the echo communications. Faites les communications par écho.
+         accept Echo;
          begin
-         
             Ada.Text_IO.Put_Line ("Task " & integer'image(my_Index));
             loop
-               Character'Output (my_Channel, Character'Input(my_Channel));
+               if other_Channel /= null then
+                  Character'Output (other_Channel, Character'Input(my_Channel));
+               end if;
             end loop;
          exception
             when Ada.IO_Exceptions.End_Error =>
@@ -100,18 +88,11 @@ procedure serv is
               Ada.Text_IO.Put_Line ("Echo " & integer'image(my_Index) & " err");
          end;
          GNAT.Sockets.Close_Socket (my_Connection);
-         Task_Info.Push_Stack (my_Index); -- Return to stack of unused tasks. Revenir à la pile de tâches inutilisées.
+         Task_Info.Push_Stack (my_Index);
       end loop;
    end SocketTask;
 
--------------------------------------------------------------------------------
--- Setup the socket receiver, initialize the task stack, and then loop,
--- blocking on Accept_Socket, using Pop_Stack for the next free task from the
--- stack, waiting if necessary.
 
--- Configurez le récepteur de socket, initialisez la pile de tâches, 
--- puis bouclez en bloquant sur Accept_Socket, en utilisant Pop_Stack 
--- pour la prochaine tâche libre de la pile, en attendant si nécessaire.
    task type SocketServer (my_Port : GNAT.Sockets.Port_Type) is
       entry Listen;
    end SocketServer;
@@ -125,7 +106,7 @@ procedure serv is
    Use_Task   : Index;
 
    begin
-      accept Listen;    -- On cree le socket du serveur
+      accept Listen;
       GNAT.Sockets.Create_Socket (Socket => Receiver);
       GNAT.Sockets.Set_Socket_Option
         (Socket => Receiver,
@@ -138,25 +119,21 @@ procedure serv is
                      Port   => my_Port));
       GNAT.Sockets.Listen_Socket (Socket => Receiver);
       Task_Info.Initialize_Stack;
-Find: loop -- Block for connection and take next free task. // Bloquez la connexion et prenez la prochaine tâche libre.
-         GNAT.Sockets.Accept_Socket
-           (Server  => Receiver,
-            Socket  => Connection,
-            Address => Client);
+Find: loop 
+         GNAT.Sockets.Accept_Socket (Server  => Receiver, Socket  => Connection, Address => Client);
          Ada.Text_IO.Put_Line ("Connect " & GNAT.Sockets.Image(Client));
          Channel := GNAT.Sockets.Stream (Connection);
-         Task_Info.Pop_Stack(Use_Task); -- Protected guard waits if full house. // Un gardien protégé attend si la salle est pleine.
-         -- Setup the socket in this task in rendezvous.
-         -- Configurer le socket dans cette tâche en rendez-vous
-         Worker(Use_Task).Setup(Connection,Client, Channel,Use_Task);
-         -- Run the asynchronous task for the socket communications. // Exécutez la tâche asynchrone pour les communications socket.
-         Worker(Use_Task).Echo; -- Start echo loop.
+         Task_Info.Pop_Stack(Use_Task);
+         Worker(Use_Task).Setup(Connection, Client, Channel, Use_Task);
+         Worker(Use_Task).Echo; 
       end loop Find;
    end SocketServer;
 
    Echo_Server : SocketServer(my_Port => 12321);
 
--------------------------------------------------------------------------------
-begin
-   Echo_Server.Listen;
-end serv;
+   procedure Run is
+   begin
+      Echo_Server.Listen;
+   end Run;
+
+end Serveur;

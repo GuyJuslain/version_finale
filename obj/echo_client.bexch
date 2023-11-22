@@ -1,0 +1,19 @@
+[GENERATED OBJECT FILE]
+b__echo_client.o
+[PROJECT FILES]
+/home/henley/Desktop/Capstones/version_finale/build.gpr
+20231122192058 ec40029efcf6de083bc351efd1db1c47
+[BOUND OBJECT FILES]
+/home/henley/Desktop/Capstones/version_finale/obj/client.o
+/home/henley/Desktop/Capstones/version_finale/obj/echo_client.o
+[GENERATED SOURCE FILES]
+b__echo_client.ads
+b__echo_client.adb
+b__echo_client.ali
+[RESULTING OPTIONS]
+-L/home/henley/Desktop/Capstones/version_finale/obj/
+-L/home/henley/Desktop/Capstones/version_finale/obj/
+-L/home/henley/adacore/nvidia/wave/x86_64-linux/gnat/install/lib/gcc/x86_64-pc-linux-gnu/12.2.1/adalib/
+-static
+/home/henley/adacore/nvidia/wave/x86_64-linux/gnat/install/lib/gcc/x86_64-pc-linux-gnu/12.2.1/adalib/libgnat.a
+-ldl
