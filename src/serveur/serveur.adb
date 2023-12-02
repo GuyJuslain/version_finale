@@ -1,13 +1,23 @@
-with Ada.Text_IO; 
+with Ada.Text_IO; use Ada.Text_IO;
 with Ada.IO_Exceptions;
-with GNAT.Sockets; use GNAT.Sockets;
+with GNAT.Sockets;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Streams; use Ada.Streams;
+use type Ada.Streams.Stream_Element_Count;
+
+with Ada.Real_Time; use Ada.Real_Time;
 
 package body Serveur is
    Tasks_To_Create : constant := 2; -- simultaneous socket connections.
 
-   type Integer_List is array (1..Tasks_To_Create) of integer; --  Pile de tache
-   subtype Counter is integer range 0 .. Tasks_To_Create;
-   subtype Index is integer range 1 .. Tasks_To_Create;
+   type Integer_List is array (1..Tasks_To_Create) of Integer; --  Pile de tache
+   type Messages_T is array (1..Tasks_To_Create) of Unbounded_String; --  Pile de tache
+   subtype Counter is Integer range 0 .. Tasks_To_Create;
+
+   subtype Index is Integer range 1 .. Tasks_To_Create;
+
+   function Get_Other_Task_Index (This_Task : Index) return Index is
+      (if This_Task = 1 then 2 else 1);
 
    protected type Info is     -- pile
       procedure Push_Stack (Return_Task_Index : in Index);
@@ -40,46 +50,62 @@ package body Serveur is
    end Info;
 
    Task_Info : Info;
+
+   protected type Messages is
+      procedure Append (Char : in Character; Task_Index : in Index);
+      procedure Depend (Char : out Character; Task_Index : in Index);
+   private
+      Msgs : Messages_T;
+   end Messages;
+
+   protected body Messages is
+      procedure Append (Char : in Character; Task_Index : in Index) is
+      begin
+         Msgs (Task_Index).Append (Char);
+      end Append;
+      procedure Depend (Char : out Character; Task_Index : in Index) is   
+      begin
+         if Msgs (Task_Index).Length > 0 then
+            Char := Msgs (Task_Index).Element (1);
+            Msgs (Task_Index) := Msgs (Task_Index).Delete (1, 1);
+         else
+            Char := ASCII.LF;
+         end if;
+      end Depend;
+   end Messages;
+
+   Task_Messages : Messages;
      
    task type SocketTask is
       entry Setup (Connection : GNAT.Sockets.Socket_Type;
                    Client     : GNAT.Sockets.Sock_Addr_Type;
-                   Channel    : GNAT.Sockets.Stream_Access;
                    Task_Index : Index);
-      entry Setup_Other_Channel (Channel : GNAT.Sockets.Stream_Access);
-      entry Echo;
+      entry Read;
    end SocketTask;
+
+   Worker : array (1..Tasks_To_Create) of SocketTask;
+   Channels : array (1..Tasks_To_Create) of GNAT.Sockets.Stream_Access;
 
    task body SocketTask is
       my_Connection : GNAT.Sockets.Socket_Type;
       my_Client     : GNAT.Sockets.Sock_Addr_Type;
-      my_Channel    : GNAT.Sockets.Stream_Access;
-      other_Channel : GNAT.Sockets.Stream_Access := null;
       my_Index      : Index;
-      
    begin
       loop
          accept Setup (Connection : GNAT.Sockets.Socket_Type; 
                        Client  : GNAT.Sockets.Sock_Addr_Type; 
-                       Channel : GNAT.Sockets.Stream_Access;
                        Task_Index   : Index) do
             my_Connection := Connection;
             my_Client     := Client;
-            my_Channel    := Channel;
             my_Index      := Task_Index;
          end;
-
-         accept Setup_Other_Channel (Channel : GNAT.Sockets.Stream_Access) do
-            other_Channel := Channel;
-         end;
    
-         accept Echo;
+         accept Read; 
          begin
             Ada.Text_IO.Put_Line ("Task " & integer'image(my_Index));
             loop
-               if other_Channel /= null then
-                  Character'Output (other_Channel, Character'Input(my_Channel));
-               end if;
+               Task_Messages.Append (Character'Input (Channels (My_Index)), 
+                                     Get_Other_Task_Index (my_Index));
             end loop;
          exception
             when Ada.IO_Exceptions.End_Error =>
@@ -92,6 +118,37 @@ package body Serveur is
       end loop;
    end SocketTask;
 
+   task type SocketSend is
+      entry Setup (Task_Index : Index);
+      entry Send;
+   end SocketSend;
+
+   task body SocketSend is
+      Char          : Character;
+      My_Index      : Index;
+      Period        : constant Time_Span := Milliseconds (10);
+      Next_Release  : Time := Ada.Real_Time.Clock;
+   begin
+      loop
+         accept Setup (Task_Index : Index) do
+            My_Index := Task_Index;
+         end;
+         accept Send;
+         begin
+            loop
+               Task_Messages.Depend (Char, My_Index);
+               if Char /= ASCII.LF then
+                  Character'Output (Channels (My_Index), Char);
+               end if;
+               Next_Release := Next_Release + Period;
+               delay until Next_Release;
+            end loop;
+         end;
+      end loop;
+   end SocketSend;
+
+   Sender : array (1..Tasks_To_Create) of SocketSend;
+
 
    task type SocketServer (my_Port : GNAT.Sockets.Port_Type) is
       entry Listen;
@@ -102,7 +159,7 @@ package body Serveur is
    Connection : GNAT.Sockets.Socket_Type;
    Client     : GNAT.Sockets.Sock_Addr_Type;
    Channel    : GNAT.Sockets.Stream_Access;
-   Worker     : array (1..Tasks_To_Create) of SocketTask;
+   
    Use_Task   : Index;
 
    begin
@@ -122,10 +179,16 @@ package body Serveur is
 Find: loop 
          GNAT.Sockets.Accept_Socket (Server  => Receiver, Socket  => Connection, Address => Client);
          Ada.Text_IO.Put_Line ("Connect " & GNAT.Sockets.Image(Client));
-         Channel := GNAT.Sockets.Stream (Connection);
+        
          Task_Info.Pop_Stack(Use_Task);
-         Worker(Use_Task).Setup(Connection, Client, Channel, Use_Task);
-         Worker(Use_Task).Echo; 
+         Channels (Use_Task) := GNAT.Sockets.Stream (Connection);
+
+         Worker(Use_Task).Setup(Connection, Client,  Use_Task);
+         Worker(Use_Task).Read; 
+
+         Sender(Use_Task).Setup(Use_Task);
+         Sender(Use_Task).Send;
+
       end loop Find;
    end SocketServer;
 

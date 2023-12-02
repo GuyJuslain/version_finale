@@ -6,7 +6,7 @@ with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Streams; use Ada.Streams;
 use type Ada.Streams.Stream_Element_Count;
 
-package body Client is
+package body Client_A is
 
    --  Send   : String := (1 => ASCII.CR, 2 => ASCII.LF, 3 => ASCII.CR, 4 => ASCII.LF);
    --  Offset : Ada.Streams.Stream_Element_Count;
@@ -42,16 +42,16 @@ package body Client is
          Put ("Saisisez votre message :  ");
          Message := To_Unbounded_String (Get_Line) & ASCII.NUL;
          String'Write (Channel, To_String (Message));
-         loop 
-            Read (Channel.all, Data, Last);
-            Char := Character'Val (Data (1));
-            if Char = ASCII.NUL then
-               New_Line;
-               exit;
-            end if;
-            Put (Char);
-         end loop;
+         --  loop 
+         --     Read (Channel.all, Data, Last);
+         --     Char := Character'Val (Data (1));
+         --     if Char = ASCII.NUL then
+         --        New_Line;
+         --        exit;
+         --     end if;
+         --     Put (Char);
+         --  end loop;
       end loop;
       --  String'Write (Channel, ASCII.NUL'Image);
    end Run;
-end Client;
+end Client_A;
